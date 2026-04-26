@@ -64,11 +64,18 @@ export default function HomeScreen({ navigation }: Props) {
           <Text style={styles.startSubtitle}>5 minutes</Text>
         </Pressable>
 
-        <View style={styles.statsRow}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="View stats"
+          onPress={() => navigation.navigate('Stats')}
+          style={({ pressed }) => [styles.statsRow, pressed && { opacity: 0.7 }]}
+        >
           <Stat label="Sessions" value={String(stats?.totalSessions ?? 0)} />
           <View style={styles.statDivider} />
           <Stat label="Total focus" value={formatFocusTime(stats?.totalFocusSeconds ?? 0)} />
-        </View>
+          <View style={styles.statDivider} />
+          <Text style={styles.statsLink}>Stats ›</Text>
+        </Pressable>
       </View>
     </SafeAreaView>
   );
@@ -168,4 +175,5 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
   },
   statDivider: { width: 1, height: 28, backgroundColor: colors.border },
+  statsLink: { color: colors.primary, fontSize: 13, fontWeight: '500' },
 });
