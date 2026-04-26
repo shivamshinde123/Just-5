@@ -32,13 +32,27 @@ export default function HomeScreen({ navigation }: Props) {
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
       <View style={styles.container}>
-        <View style={styles.header}>
-          <Text style={styles.streakLabel}>Streak</Text>
-          <Text style={styles.streakValue}>
-            {stats?.currentDailyStreak ?? 0}
-            <Text style={styles.streakUnit}> {stats?.currentDailyStreak === 1 ? 'day' : 'days'}</Text>
-          </Text>
+        <View style={styles.streaksHeader}>
+          <StreakBlock
+            label="Daily"
+            current={stats?.currentDailyStreak ?? 0}
+            best={stats?.bestDailyStreak ?? 0}
+          />
+          <View style={styles.streakDivider} />
+          <StreakBlock
+            label="Conversion"
+            current={stats?.currentConversionStreak ?? 0}
+            best={stats?.bestConversionStreak ?? 0}
+          />
         </View>
+
+        {(stats?.gracesAvailable ?? 0) > 0 && (
+          <View style={styles.gracesBadge}>
+            <Text style={styles.gracesText}>
+              {stats?.gracesAvailable} grace{stats?.gracesAvailable === 1 ? '' : 's'} saved
+            </Text>
+          </View>
+        )}
 
         <Pressable
           accessibilityRole="button"
@@ -60,6 +74,24 @@ export default function HomeScreen({ navigation }: Props) {
   );
 }
 
+function StreakBlock({
+  label,
+  current,
+  best,
+}: {
+  label: string;
+  current: number;
+  best: number;
+}) {
+  return (
+    <View style={styles.streakBlock}>
+      <Text style={styles.streakLabel}>{label}</Text>
+      <Text style={styles.streakValue}>{current}</Text>
+      <Text style={styles.streakBest}>Best {best}</Text>
+    </View>
+  );
+}
+
 function Stat({ label, value }: { label: string; value: string }) {
   return (
     <View style={styles.stat}>
@@ -74,19 +106,39 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     paddingHorizontal: spacing.lg,
-    paddingTop: spacing.xl,
+    paddingTop: spacing.lg,
     paddingBottom: spacing.lg,
     justifyContent: 'space-between',
   },
-  header: { alignItems: 'center', gap: spacing.xs },
+  streaksHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-around',
+    backgroundColor: colors.surface,
+    borderRadius: radii.md,
+    paddingVertical: spacing.md,
+  },
+  streakBlock: { alignItems: 'center', flex: 1, gap: 2 },
+  streakDivider: { width: 1, height: 56, backgroundColor: colors.border },
   streakLabel: {
     color: colors.textMuted,
-    fontSize: 14,
+    fontSize: 11,
     letterSpacing: 1.5,
     textTransform: 'uppercase',
   },
-  streakValue: { color: colors.text, fontSize: 56, fontWeight: '700' },
-  streakUnit: { color: colors.textMuted, fontSize: 20, fontWeight: '500' },
+  streakValue: { color: colors.text, fontSize: 40, fontWeight: '700' },
+  streakBest: { color: colors.textMuted, fontSize: 12 },
+  gracesBadge: {
+    alignSelf: 'center',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    borderRadius: radii.pill,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    marginTop: spacing.sm,
+  },
+  gracesText: { color: colors.success, fontSize: 12, letterSpacing: 0.5 },
   startButton: {
     alignSelf: 'center',
     width: 260,
