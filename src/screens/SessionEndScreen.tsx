@@ -1,6 +1,7 @@
+import { useFocusEffect } from '@react-navigation/native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { useEffect, useRef, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { BackHandler, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { recordSession } from '../db';
 import { RootStackParamList } from '../navigation/types';
@@ -24,6 +25,13 @@ export default function SessionEndScreen({ navigation, route }: Props) {
     const id = setInterval(tick, 250);
     return () => clearInterval(id);
   }, [extending, startedAt]);
+
+  useFocusEffect(
+    useCallback(() => {
+      const sub = BackHandler.addEventListener('hardwareBackPress', () => true);
+      return () => sub.remove();
+    }, []),
+  );
 
   const finish = async (converted: boolean) => {
     if (savedRef.current) return;
