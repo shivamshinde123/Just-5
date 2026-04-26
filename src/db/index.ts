@@ -216,39 +216,41 @@ export async function recordSession(params: {
   converted: boolean;
 }): Promise<void> {
   const db = await getDb();
-  await db.runAsync(
-    'INSERT INTO sessions (started_at, ended_at, duration_seconds, converted) VALUES (?, ?, ?, ?)',
-    params.startedAt,
-    params.endedAt,
-    params.durationSeconds,
-    params.converted ? 1 : 0,
-  );
+  await db.withTransactionAsync(async () => {
+    await db.runAsync(
+      'INSERT INTO sessions (started_at, ended_at, duration_seconds, converted) VALUES (?, ?, ?, ?)',
+      params.startedAt,
+      params.endedAt,
+      params.durationSeconds,
+      params.converted ? 1 : 0,
+    );
 
-  const todayKey = toLocalDateKey(params.startedAt);
-  const prev = await readStreakState(db);
+    const todayKey = toLocalDateKey(params.startedAt);
+    const prev = await readStreakState(db);
 
-  const daily = applyDailyOnSave(prev, todayKey);
-  const conv = applyConversionOnSave(prev, todayKey, params.converted);
-  const grace = maybeEarnGrace(daily.current, daily.graces, daily.gracesEarnedAt);
+    const daily = applyDailyOnSave(prev, todayKey);
+    const conv = applyConversionOnSave(prev, todayKey, params.converted);
+    const grace = maybeEarnGrace(daily.current, daily.graces, daily.gracesEarnedAt);
 
-  const nextBestDaily = Math.max(prev.best_daily, daily.current);
-  const nextBestConversion = Math.max(prev.best_conversion, conv.current);
+    const nextBestDaily = Math.max(prev.best_daily, daily.current);
+    const nextBestConversion = Math.max(prev.best_conversion, conv.current);
 
-  await db.runAsync(
-    `UPDATE streak_state SET
-       current_daily = ?, best_daily = ?, last_started_date = ?,
-       current_conversion = ?, best_conversion = ?, last_converted_date = ?,
-       graces_available = ?, graces_earned_at_streak = ?
-     WHERE id = 1`,
-    daily.current,
-    nextBestDaily,
-    todayKey,
-    conv.current,
-    nextBestConversion,
-    conv.lastDate,
-    grace.graces,
-    grace.earnedAt,
-  );
+    await db.runAsync(
+      `UPDATE streak_state SET
+         current_daily = ?, best_daily = ?, last_started_date = ?,
+         current_conversion = ?, best_conversion = ?, last_converted_date = ?,
+         graces_available = ?, graces_earned_at_streak = ?
+       WHERE id = 1`,
+      daily.current,
+      nextBestDaily,
+      todayKey,
+      conv.current,
+      nextBestConversion,
+      conv.lastDate,
+      grace.graces,
+      grace.earnedAt,
+    );
+  });
 }
 
 export async function loadHomeStats(): Promise<HomeStats> {

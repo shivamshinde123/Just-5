@@ -1,6 +1,7 @@
+import { useFocusEffect } from '@react-navigation/native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { useEffect, useRef, useState } from 'react';
-import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Alert, BackHandler, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { recordSession } from '../db';
 import { RootStackParamList } from '../navigation/types';
@@ -13,25 +14,26 @@ export default function TimerScreen({ navigation, route }: Props) {
   const { startedAt } = route.params;
   const [elapsedSec, setElapsedSec] = useState(0);
   const transitionedRef = useRef(false);
+  const reachedFiveAt = startedAt + FIVE_MINUTES_SECONDS * 1000;
 
   useEffect(() => {
     const tick = () => {
-      const next = Math.floor((Date.now() - startedAt) / 1000);
-      setElapsedSec(next);
-      if (!transitionedRef.current && next >= FIVE_MINUTES_SECONDS) {
+      const now = Date.now();
+      setElapsedSec(Math.floor((now - startedAt) / 1000));
+      if (!transitionedRef.current && now >= reachedFiveAt) {
         transitionedRef.current = true;
-        navigation.replace('SessionEnd', { startedAt, reachedFiveAt: Date.now() });
+        navigation.replace('SessionEnd', { startedAt, reachedFiveAt });
       }
     };
     tick();
     const id = setInterval(tick, 250);
     return () => clearInterval(id);
-  }, [startedAt, navigation]);
+  }, [startedAt, reachedFiveAt, navigation]);
 
-  const onCancel = () => {
+  const promptCancel = useCallback(() => {
     Alert.alert(
       'Cancel session?',
-      "You haven't reached 5 minutes yet. This won't be recorded.",
+      'Sessions under 1 minute are discarded; longer ones are saved as not-converted.',
       [
         { text: 'Keep going', style: 'cancel' },
         {
@@ -53,7 +55,17 @@ export default function TimerScreen({ navigation, route }: Props) {
         },
       ],
     );
-  };
+  }, [startedAt, navigation]);
+
+  useFocusEffect(
+    useCallback(() => {
+      const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+        promptCancel();
+        return true;
+      });
+      return () => sub.remove();
+    }, [promptCancel]),
+  );
 
   const remaining = Math.max(0, FIVE_MINUTES_SECONDS - elapsedSec);
 
@@ -68,7 +80,7 @@ export default function TimerScreen({ navigation, route }: Props) {
 
         <Pressable
           accessibilityRole="button"
-          onPress={onCancel}
+          onPress={promptCancel}
           style={({ pressed }) => [styles.cancel, pressed && { opacity: 0.6 }]}
         >
           <Text style={styles.cancelText}>Cancel</Text>
