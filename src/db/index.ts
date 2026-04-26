@@ -176,7 +176,10 @@ function applyConversionOnSave(
   converted: boolean,
 ): { current: number; lastDate: string | null } {
   if (!converted) {
-    return { current: prev.current_conversion, lastDate: prev.last_converted_date };
+    if (prev.last_converted_date === todayKey) {
+      return { current: prev.current_conversion, lastDate: prev.last_converted_date };
+    }
+    return { current: 0, lastDate: prev.last_converted_date };
   }
   if (!prev.last_converted_date) {
     return { current: 1, lastDate: todayKey };
