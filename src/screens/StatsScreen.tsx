@@ -1,6 +1,6 @@
 import { useFocusEffect } from '@react-navigation/native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { useCallback, useState } from 'react';
+import { useCallback, useState, type ReactNode } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ContributionGraph } from '../components/ContributionGraph';
@@ -35,21 +35,35 @@ export default function StatsScreen({ navigation }: Props) {
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
       <View style={styles.header}>
-        <Pressable onPress={() => navigation.goBack()} hitSlop={12}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Go back"
+          onPress={() => navigation.goBack()}
+          hitSlop={12}
+        >
           <Text style={styles.back}>‹ Back</Text>
         </Pressable>
         <Text style={styles.title}>Stats</Text>
         <View style={{ width: 50 }} />
       </View>
 
-      <View style={styles.tabs}>
-        {(['today', 'week', 'all'] as Tab[]).map((t) => (
-          <Pressable key={t} onPress={() => setTab(t)} style={styles.tab}>
-            <Text style={[styles.tabText, tab === t && styles.tabActive]}>
-              {t === 'today' ? 'Today' : t === 'week' ? 'This Week' : 'All Time'}
-            </Text>
-          </Pressable>
-        ))}
+      <View style={styles.tabs} accessibilityRole="tablist">
+        {(['today', 'week', 'all'] as Tab[]).map((t) => {
+          const label = t === 'today' ? 'Today' : t === 'week' ? 'This Week' : 'All Time';
+          const selected = tab === t;
+          return (
+            <Pressable
+              key={t}
+              onPress={() => setTab(t)}
+              style={styles.tab}
+              accessibilityRole="tab"
+              accessibilityLabel={label}
+              accessibilityState={{ selected }}
+            >
+              <Text style={[styles.tabText, selected && styles.tabActive]}>{label}</Text>
+            </Pressable>
+          );
+        })}
       </View>
 
       <ScrollView contentContainerStyle={styles.content}>
@@ -74,7 +88,7 @@ export default function StatsScreen({ navigation }: Props) {
   );
 }
 
-function Card({ title, children }: { title: string; children: React.ReactNode }) {
+function Card({ title, children }: { title: string; children: ReactNode }) {
   return (
     <View style={styles.card}>
       <Text style={styles.cardTitle}>{title}</Text>

@@ -15,6 +15,8 @@ export function ContributionGraph({ days }: { days: ContributionDay[] }) {
         <View key={d.dateKey} style={styles.col}>
           <View
             style={[styles.cell, { backgroundColor: CELL_COLORS[d.kind] }]}
+            accessible
+            accessibilityRole="image"
             accessibilityLabel={`${d.weekday}: ${d.kind}`}
           />
           <Text style={styles.label}>{d.weekday[0]}</Text>

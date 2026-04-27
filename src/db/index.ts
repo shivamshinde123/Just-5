@@ -402,7 +402,8 @@ export async function loadStatsBundle(): Promise<StatsBundle> {
   }
 
   const buckets = [
-    { label: '5–15m', minSec: 0, maxSec: 15 * 60, count: 0 },
+    { label: '<5m', minSec: 0, maxSec: 5 * 60, count: 0 },
+    { label: '5–15m', minSec: 5 * 60, maxSec: 15 * 60, count: 0 },
     { label: '15–30m', minSec: 15 * 60, maxSec: 30 * 60, count: 0 },
     { label: '30–45m', minSec: 30 * 60, maxSec: 45 * 60, count: 0 },
     { label: '45m+', minSec: 45 * 60, maxSec: Infinity, count: 0 },
