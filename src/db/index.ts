@@ -162,6 +162,20 @@ function dayDiffInDays(a: string, b: string): number {
   return Math.round((bMs - aMs) / (1000 * 60 * 60 * 24));
 }
 
+function effectiveCurrentDaily(state: StreakStateRow, todayKey: string): number {
+  if (!state.last_started_date || state.current_daily <= 0) return state.current_daily;
+  const diff = dayDiffInDays(state.last_started_date, todayKey);
+  if (diff <= 1) return state.current_daily;
+  const missed = diff - 1;
+  return state.graces_available >= missed ? state.current_daily : 0;
+}
+
+function effectiveCurrentConversion(state: StreakStateRow, todayKey: string): number {
+  if (!state.last_converted_date || state.current_conversion <= 0) return state.current_conversion;
+  const diff = dayDiffInDays(state.last_converted_date, todayKey);
+  return diff > 1 ? 0 : state.current_conversion;
+}
+
 async function readStreakState(db: SQLite.SQLiteDatabase): Promise<StreakStateRow> {
   const row = await db.getFirstAsync<StreakStateRow>(
     `SELECT current_daily, best_daily, last_started_date,
@@ -349,29 +363,15 @@ export async function loadHomeStats(): Promise<HomeStats> {
   const totals = await db.getFirstAsync<{
     count: number;
     total: number | null;
-    converted: number;
+    converted: number | null;
   }>(
     'SELECT COUNT(*) AS count, SUM(duration_seconds) AS total, SUM(converted) AS converted FROM sessions',
   );
   const state = await readStreakState(db);
   const todayKey = toLocalDateKey(Date.now());
 
-  let currentDaily = state.current_daily;
-  if (state.last_started_date && currentDaily > 0) {
-    const diff = dayDiffInDays(state.last_started_date, todayKey);
-    if (diff > 1) {
-      const missed = diff - 1;
-      if (state.graces_available < missed) {
-        currentDaily = 0;
-      }
-    }
-  }
-
-  let currentConversion = state.current_conversion;
-  if (state.last_converted_date && currentConversion > 0) {
-    const diff = dayDiffInDays(state.last_converted_date, todayKey);
-    if (diff > 1) currentConversion = 0;
-  }
+  const currentDaily = effectiveCurrentDaily(state, todayKey);
+  const currentConversion = effectiveCurrentConversion(state, todayKey);
 
   const totalSessions = totals?.count ?? 0;
   const conversionRate = totalSessions > 0 ? (totals?.converted ?? 0) / totalSessions : 0;
@@ -448,7 +448,7 @@ export async function loadStatsBundle(): Promise<StatsBundle> {
   const allTotals = await db.getFirstAsync<{
     count: number;
     total: number | null;
-    converted: number;
+    converted: number | null;
   }>(
     `SELECT COUNT(*) AS count,
             SUM(duration_seconds) AS total,
@@ -467,12 +467,8 @@ export async function loadStatsBundle(): Promise<StatsBundle> {
   const allRows = await db.getAllAsync<{ started_at: number; duration_seconds: number }>(
     'SELECT started_at, duration_seconds FROM sessions',
   );
-  const hourCounts = new Array(24).fill(0) as number[];
-  for (const r of allRows) {
-    const h = new Date(r.started_at).getHours();
-    hourCounts[h] += 1;
-  }
 
+  const hourCounts = new Array(24).fill(0) as number[];
   const buckets = [
     { label: '<5m', minSec: 0, maxSec: 5 * 60, count: 0 },
     { label: '5–15m', minSec: 5 * 60, maxSec: 15 * 60, count: 0 },
@@ -480,7 +476,11 @@ export async function loadStatsBundle(): Promise<StatsBundle> {
     { label: '30–45m', minSec: 30 * 60, maxSec: 45 * 60, count: 0 },
     { label: '45m+', minSec: 45 * 60, maxSec: Infinity, count: 0 },
   ];
+  let longestSessionSeconds = 0;
+  const focusByDay = new Map<string, number>();
+
   for (const r of allRows) {
+    hourCounts[new Date(r.started_at).getHours()] += 1;
     const s = r.duration_seconds;
     for (const b of buckets) {
       if (s >= b.minSec && s < b.maxSec) {
@@ -488,17 +488,11 @@ export async function loadStatsBundle(): Promise<StatsBundle> {
         break;
       }
     }
+    if (s > longestSessionSeconds) longestSessionSeconds = s;
+    const dayKey = toLocalDateKey(r.started_at);
+    focusByDay.set(dayKey, (focusByDay.get(dayKey) ?? 0) + s);
   }
 
-  const state = await readStreakState(db);
-
-  let longestSessionSeconds = 0;
-  const focusByDay = new Map<string, number>();
-  for (const r of allRows) {
-    if (r.duration_seconds > longestSessionSeconds) longestSessionSeconds = r.duration_seconds;
-    const key = toLocalDateKey(r.started_at);
-    focusByDay.set(key, (focusByDay.get(key) ?? 0) + r.duration_seconds);
-  }
   let mostFocusInDaySeconds = 0;
   let mostFocusInDayKey: string | null = null;
   for (const [key, total] of focusByDay) {
@@ -507,6 +501,10 @@ export async function loadStatsBundle(): Promise<StatsBundle> {
       mostFocusInDayKey = key;
     }
   }
+
+  const state = await readStreakState(db);
+  const todayKey = toLocalDateKey(now);
+
   const records: PersonalRecords = {
     longestSessionSeconds,
     longestDailyStreak: state.best_daily,
@@ -516,7 +514,7 @@ export async function loadStatsBundle(): Promise<StatsBundle> {
   };
 
   const focusTitle = deriveFocusTitle({
-    currentDailyStreak: state.current_daily,
+    currentDailyStreak: effectiveCurrentDaily(state, todayKey),
     conversionRate: allTime.conversionRate,
   });
 

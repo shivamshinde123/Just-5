@@ -166,13 +166,7 @@ function formatDateMs(ms: number): string {
 function AllTimeView({ data }: { data: StatsBundle }) {
   const { allTime, hourCounts, lengthBuckets, records, focusTitle, unlockedMilestones } = data;
   const conversionPct = Math.round(allTime.conversionRate * 100);
-  const allMilestoneKeys: MilestoneKey[] = [
-    'first_session',
-    'ten_sessions',
-    'first_60min_session',
-    'first_7_day_streak',
-    'first_30_day_streak',
-  ];
+  const allMilestoneKeys = Object.keys(MILESTONE_LABELS) as MilestoneKey[];
   const achievedMap = new Map(unlockedMilestones.map((m) => [m.key, m.achievedAt]));
   return (
     <>
