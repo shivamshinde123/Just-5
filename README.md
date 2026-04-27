@@ -54,6 +54,20 @@ The app has three main user flows:
 
 The app stores sessions, streak state, milestones, and user preferences in a local SQLite database. Stats and profile views are derived from that stored data.
 
+## Screenshots
+
+<p align="center">
+  <img src="assets/app%20screenshots/WhatsApp%20Image%202026-04-27%20at%2009.58.03.jpeg" alt="Home screen" width="220" />
+  <img src="assets/app%20screenshots/WhatsApp%20Image%202026-04-27%20at%2009.58.04.jpeg" alt="Insights today screen" width="220" />
+  <img src="assets/app%20screenshots/WhatsApp%20Image%202026-04-27%20at%2009.58.05.jpeg" alt="Consistency screen" width="220" />
+</p>
+
+<p align="center">
+  <img src="assets/app%20screenshots/WhatsApp%20Image%202026-04-27%20at%2009.58.06.jpeg" alt="All time stats screen" width="220" />
+  <img src="assets/app%20screenshots/WhatsApp%20Image%202026-04-27%20at%2009.58.08.jpeg" alt="Profile screen" width="220" />
+  <img src="assets/app%20screenshots/WhatsApp%20Image%202026-04-27%20at%2009.58.10.jpeg" alt="Settings screen" width="220" />
+</p>
+
 ## Run with Expo Go
 
 This is the easiest way to run the app on an iPhone or Android phone during development.
