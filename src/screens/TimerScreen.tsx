@@ -1,12 +1,13 @@
 import { useFocusEffect } from '@react-navigation/native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, BackHandler, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, AppState, BackHandler, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { recordSession } from '../db';
+import { hapticSuccess, hapticWarning, playChime } from '../effects';
 import type { MilestoneKey } from '../gamification';
 import { RootStackParamList } from '../navigation/types';
-import { colors, radii, spacing } from '../theme';
+import { colors, fonts, radii, shadows, spacing, text } from '../theme';
 import { FIVE_MINUTES_SECONDS, formatDuration } from '../utils/time';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Timer'>;
@@ -23,12 +24,20 @@ export default function TimerScreen({ navigation, route }: Props) {
       setElapsedSec(Math.floor((now - startedAt) / 1000));
       if (!transitionedRef.current && now >= reachedFiveAt) {
         transitionedRef.current = true;
+        playChime();
+        hapticSuccess();
         navigation.replace('SessionEnd', { startedAt, reachedFiveAt });
       }
     };
     tick();
     const id = setInterval(tick, 250);
-    return () => clearInterval(id);
+    const appSub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') tick();
+    });
+    return () => {
+      clearInterval(id);
+      appSub.remove();
+    };
   }, [startedAt, reachedFiveAt, navigation]);
 
   const promptCancel = useCallback(() => {
@@ -41,6 +50,7 @@ export default function TimerScreen({ navigation, route }: Props) {
           text: 'Cancel session',
           style: 'destructive',
           onPress: async () => {
+            hapticWarning();
             const endedAt = Date.now();
             const dur = Math.floor((endedAt - startedAt) / 1000);
             let unlocked: MilestoneKey[] = [];
@@ -53,7 +63,10 @@ export default function TimerScreen({ navigation, route }: Props) {
               });
               unlocked = result.newlyUnlocked;
             }
-            navigation.navigate('Home', unlocked.length ? { unlockedMilestones: unlocked } : undefined);
+            navigation.navigate('Tabs', {
+              screen: 'Home',
+              params: unlocked.length ? { unlockedMilestones: unlocked } : undefined,
+            });
           },
         },
       ],
@@ -74,19 +87,49 @@ export default function TimerScreen({ navigation, route }: Props) {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
-      <View style={styles.container}>
-        <Text style={styles.label}>Focus</Text>
-        <Text style={styles.timer}>{formatDuration(elapsedSec)}</Text>
-        <Text style={styles.hint}>
-          {remaining > 0 ? `${formatDuration(remaining)} until you decide` : 'Almost there...'}
-        </Text>
+      <View style={styles.glowLeft} />
+      <View style={styles.glowRight} />
 
+      <View style={styles.topBar}>
+        <View style={styles.avatar}>
+          <View style={styles.avatarDot} />
+        </View>
+        <Text style={styles.topBarTitle}>Focus</Text>
+        <View style={{ width: 36 }} />
+      </View>
+
+      <View style={styles.statusPill}>
+        <View style={styles.statusDot} />
+        <Text style={styles.statusText}>TRACKING FOCUS</Text>
+      </View>
+
+      <View style={styles.center}>
+        <View style={styles.ringOuter}>
+          <View style={styles.ringInner}>
+            <Text style={styles.eyebrow}>LIVE SESSION</Text>
+            <Text style={styles.timer}>{formatDuration(elapsedSec)}</Text>
+            <Text style={styles.caption}>
+              {remaining > 0 ? `${formatDuration(remaining)} until you decide` : 'Almost there…'}
+            </Text>
+          </View>
+        </View>
+      </View>
+
+      <View style={styles.actions}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="End session"
+          onPress={promptCancel}
+          style={({ pressed }) => [styles.endButton, pressed && styles.endButtonPressed]}
+        >
+          <Text style={styles.endButtonText}>End Session</Text>
+        </Pressable>
         <Pressable
           accessibilityRole="button"
           onPress={promptCancel}
-          style={({ pressed }) => [styles.cancel, pressed && { opacity: 0.6 }]}
+          style={({ pressed }) => [styles.cancelLink, pressed && { opacity: 0.6 }]}
         >
-          <Text style={styles.cancelText}>Cancel</Text>
+          <Text style={styles.cancelLinkText}>Cancel</Text>
         </Pressable>
       </View>
     </SafeAreaView>
@@ -95,30 +138,129 @@ export default function TimerScreen({ navigation, route }: Props) {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
-  container: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.lg },
-  label: {
-    color: colors.textMuted,
-    fontSize: 14,
-    letterSpacing: 2,
-    textTransform: 'uppercase',
-    marginBottom: spacing.md,
-  },
-  timer: {
-    color: colors.text,
-    fontSize: 96,
-    fontWeight: '300',
-    fontVariant: ['tabular-nums'],
-    letterSpacing: 2,
-  },
-  hint: { color: colors.textMuted, fontSize: 14, marginTop: spacing.md },
-  cancel: {
+  glowLeft: {
     position: 'absolute',
-    bottom: spacing.xl,
-    paddingVertical: spacing.sm,
+    top: '20%',
+    left: -80,
+    width: 320,
+    height: 320,
+    borderRadius: 9999,
+    backgroundColor: 'rgba(69, 103, 64, 0.06)',
+  },
+  glowRight: {
+    position: 'absolute',
+    top: '40%',
+    right: -100,
+    width: 320,
+    height: 320,
+    borderRadius: 9999,
+    backgroundColor: 'rgba(57, 105, 52, 0.05)',
+  },
+  topBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+  },
+  avatar: {
+    width: 36,
+    height: 36,
+    borderRadius: radii.pill,
+    backgroundColor: colors.mint,
+    borderWidth: 2,
+    borderColor: colors.primaryMid,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarDot: {
+    width: 12,
+    height: 12,
+    borderRadius: radii.pill,
+    backgroundColor: colors.primary,
+  },
+  topBarTitle: { ...text.h3, color: colors.primaryDeep, letterSpacing: -0.4 },
+
+  statusPill: {
+    flexDirection: 'row',
+    alignSelf: 'center',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 8,
+    backgroundColor: colors.surface,
     borderRadius: radii.pill,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: colors.cardBorderTan,
+    marginTop: spacing.lg,
   },
-  cancelText: { color: colors.textMuted, fontSize: 14, letterSpacing: 1 },
+  statusDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.primary },
+  statusText: {
+    fontFamily: fonts.semibold,
+    fontSize: 12,
+    letterSpacing: 1.2,
+    color: colors.primary,
+  },
+
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  ringOuter: {
+    width: 320,
+    height: 320,
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    borderColor: colors.ringOuter,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  ringInner: {
+    width: 280,
+    height: 280,
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    borderColor: colors.ringInner,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
+  },
+  eyebrow: {
+    fontFamily: fonts.medium,
+    fontSize: 12,
+    letterSpacing: 2.4,
+    color: colors.primaryEyebrow,
+  },
+  timer: {
+    fontFamily: fonts.extrabold,
+    fontSize: 76,
+    letterSpacing: -3,
+    color: colors.primary,
+    fontVariant: ['tabular-nums'],
+  },
+  caption: { ...text.body, color: colors.textBody, textAlign: 'center' },
+
+  actions: {
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.lg,
+    gap: spacing.md,
+  },
+  endButton: {
+    paddingVertical: 22,
+    borderRadius: radii.xxl,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...shadows.ctaSoft,
+  },
+  endButtonPressed: { backgroundColor: colors.primaryDeep, transform: [{ scale: 0.99 }] },
+  endButtonText: { ...text.cta, color: colors.textOnDark },
+  cancelLink: {
+    alignItems: 'center',
+    paddingVertical: spacing.sm,
+  },
+  cancelLinkText: {
+    fontFamily: fonts.semibold,
+    fontSize: 14,
+    color: colors.primary,
+    letterSpacing: 0.14,
+  },
 });
