@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, BackHandler, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { recordSession } from '../db';
+import type { MilestoneKey } from '../gamification';
 import { RootStackParamList } from '../navigation/types';
 import { colors, radii, spacing } from '../theme';
 import { FIVE_MINUTES_SECONDS, formatDuration } from '../utils/time';
@@ -42,15 +43,17 @@ export default function TimerScreen({ navigation, route }: Props) {
           onPress: async () => {
             const endedAt = Date.now();
             const dur = Math.floor((endedAt - startedAt) / 1000);
+            let unlocked: MilestoneKey[] = [];
             if (dur >= 60) {
-              await recordSession({
+              const result = await recordSession({
                 startedAt,
                 endedAt,
                 durationSeconds: dur,
                 converted: false,
               });
+              unlocked = result.newlyUnlocked;
             }
-            navigation.popToTop();
+            navigation.navigate('Home', unlocked.length ? { unlockedMilestones: unlocked } : undefined);
           },
         },
       ],

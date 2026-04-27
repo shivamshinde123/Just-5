@@ -38,13 +38,16 @@ export default function SessionEndScreen({ navigation, route }: Props) {
     savedRef.current = true;
     const endedAt = Date.now();
     const dur = Math.max(1, Math.floor((endedAt - startedAt) / 1000));
-    await recordSession({
+    const result = await recordSession({
       startedAt,
       endedAt,
       durationSeconds: dur,
       converted,
     });
-    navigation.popToTop();
+    navigation.navigate(
+      'Home',
+      result.newlyUnlocked.length ? { unlockedMilestones: result.newlyUnlocked } : undefined,
+    );
   };
 
   return (

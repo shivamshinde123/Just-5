@@ -1,4 +1,5 @@
 import * as SQLite from 'expo-sqlite';
+import { deriveFocusTitle, type FocusTitle, type MilestoneKey } from '../gamification';
 
 const DB_NAME = 'just5.db';
 const MAX_GRACES = 3;
@@ -25,6 +26,11 @@ export function getDb(): Promise<SQLite.SQLiteDatabase> {
         );
         INSERT OR IGNORE INTO streak_state (id, current_daily, last_started_date)
           VALUES (1, 0, NULL);
+        CREATE TABLE IF NOT EXISTS milestones (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          key TEXT NOT NULL UNIQUE,
+          achieved_at INTEGER NOT NULL
+        );
       `);
       await migrateStreakState(db);
       return db;
@@ -96,6 +102,7 @@ export type HomeStats = {
   currentConversionStreak: number;
   bestConversionStreak: number;
   gracesAvailable: number;
+  focusTitle: FocusTitle;
 };
 
 export type DayKind = 'none' | 'started' | 'converted';
@@ -120,12 +127,23 @@ export type AllTimeStats = {
   conversionRate: number;
 };
 
+export type PersonalRecords = {
+  longestSessionSeconds: number;
+  longestDailyStreak: number;
+  longestConversionStreak: number;
+  mostFocusInDaySeconds: number;
+  mostFocusInDayKey: string | null;
+};
+
 export type StatsBundle = {
   today: TodayStats;
   contribution: ContributionDay[];
   allTime: AllTimeStats;
   hourCounts: number[];
   lengthBuckets: { label: string; minSec: number; maxSec: number; count: number }[];
+  records: PersonalRecords;
+  focusTitle: FocusTitle;
+  unlockedMilestones: { key: MilestoneKey; achievedAt: number }[];
 };
 
 function toLocalDateKey(timestampMs: number): string {
@@ -239,13 +257,33 @@ function maybeEarnGrace(
   return { graces: gracesAvailable, earnedAt: gracesEarnedAtStreak };
 }
 
+async function readUnlockedMilestoneKeys(db: SQLite.SQLiteDatabase): Promise<Set<MilestoneKey>> {
+  const rows = await db.getAllAsync<{ key: MilestoneKey }>('SELECT key FROM milestones');
+  return new Set(rows.map((r) => r.key));
+}
+
+async function unlockMilestones(
+  db: SQLite.SQLiteDatabase,
+  keys: MilestoneKey[],
+  achievedAt: number,
+): Promise<void> {
+  for (const k of keys) {
+    await db.runAsync(
+      'INSERT OR IGNORE INTO milestones (key, achieved_at) VALUES (?, ?)',
+      k,
+      achievedAt,
+    );
+  }
+}
+
 export async function recordSession(params: {
   startedAt: number;
   endedAt: number;
   durationSeconds: number;
   converted: boolean;
-}): Promise<void> {
+}): Promise<{ newlyUnlocked: MilestoneKey[] }> {
   const db = await getDb();
+  let newlyUnlocked: MilestoneKey[] = [];
   await db.withTransactionAsync(async () => {
     await db.runAsync(
       'INSERT INTO sessions (started_at, ended_at, duration_seconds, converted) VALUES (?, ?, ?, ?)',
@@ -280,13 +318,40 @@ export async function recordSession(params: {
       grace.graces,
       grace.earnedAt,
     );
+
+    const totals = await db.getFirstAsync<{ count: number }>(
+      'SELECT COUNT(*) AS count FROM sessions',
+    );
+    const sessionCount = totals?.count ?? 0;
+    const already = await readUnlockedMilestoneKeys(db);
+    const candidates: MilestoneKey[] = [];
+    if (sessionCount >= 1 && !already.has('first_session')) candidates.push('first_session');
+    if (sessionCount >= 10 && !already.has('ten_sessions')) candidates.push('ten_sessions');
+    if (params.durationSeconds >= 60 * 60 && !already.has('first_60min_session')) {
+      candidates.push('first_60min_session');
+    }
+    if (daily.current >= 7 && !already.has('first_7_day_streak')) {
+      candidates.push('first_7_day_streak');
+    }
+    if (daily.current >= 30 && !already.has('first_30_day_streak')) {
+      candidates.push('first_30_day_streak');
+    }
+    if (candidates.length > 0) {
+      await unlockMilestones(db, candidates, params.endedAt);
+      newlyUnlocked = candidates;
+    }
   });
+  return { newlyUnlocked };
 }
 
 export async function loadHomeStats(): Promise<HomeStats> {
   const db = await getDb();
-  const totals = await db.getFirstAsync<{ count: number; total: number | null }>(
-    'SELECT COUNT(*) AS count, SUM(duration_seconds) AS total FROM sessions',
+  const totals = await db.getFirstAsync<{
+    count: number;
+    total: number | null;
+    converted: number;
+  }>(
+    'SELECT COUNT(*) AS count, SUM(duration_seconds) AS total, SUM(converted) AS converted FROM sessions',
   );
   const state = await readStreakState(db);
   const todayKey = toLocalDateKey(Date.now());
@@ -308,14 +373,21 @@ export async function loadHomeStats(): Promise<HomeStats> {
     if (diff > 1) currentConversion = 0;
   }
 
+  const totalSessions = totals?.count ?? 0;
+  const conversionRate = totalSessions > 0 ? (totals?.converted ?? 0) / totalSessions : 0;
+
   return {
-    totalSessions: totals?.count ?? 0,
+    totalSessions,
     totalFocusSeconds: totals?.total ?? 0,
     currentDailyStreak: currentDaily,
     bestDailyStreak: state.best_daily,
     currentConversionStreak: currentConversion,
     bestConversionStreak: state.best_conversion,
     gracesAvailable: state.graces_available,
+    focusTitle: deriveFocusTitle({
+      currentDailyStreak: currentDaily,
+      conversionRate,
+    }),
   };
 }
 
@@ -418,11 +490,48 @@ export async function loadStatsBundle(): Promise<StatsBundle> {
     }
   }
 
+  const state = await readStreakState(db);
+
+  let longestSessionSeconds = 0;
+  const focusByDay = new Map<string, number>();
+  for (const r of allRows) {
+    if (r.duration_seconds > longestSessionSeconds) longestSessionSeconds = r.duration_seconds;
+    const key = toLocalDateKey(r.started_at);
+    focusByDay.set(key, (focusByDay.get(key) ?? 0) + r.duration_seconds);
+  }
+  let mostFocusInDaySeconds = 0;
+  let mostFocusInDayKey: string | null = null;
+  for (const [key, total] of focusByDay) {
+    if (total > mostFocusInDaySeconds) {
+      mostFocusInDaySeconds = total;
+      mostFocusInDayKey = key;
+    }
+  }
+  const records: PersonalRecords = {
+    longestSessionSeconds,
+    longestDailyStreak: state.best_daily,
+    longestConversionStreak: state.best_conversion,
+    mostFocusInDaySeconds,
+    mostFocusInDayKey,
+  };
+
+  const focusTitle = deriveFocusTitle({
+    currentDailyStreak: state.current_daily,
+    conversionRate: allTime.conversionRate,
+  });
+
+  const milestoneRows = await db.getAllAsync<{ key: MilestoneKey; achieved_at: number }>(
+    'SELECT key, achieved_at FROM milestones ORDER BY achieved_at ASC',
+  );
+
   return {
     today,
     contribution,
     allTime,
     hourCounts,
     lengthBuckets: buckets,
+    records,
+    focusTitle,
+    unlockedMilestones: milestoneRows.map((m) => ({ key: m.key, achievedAt: m.achieved_at })),
   };
 }
