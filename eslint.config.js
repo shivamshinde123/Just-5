@@ -26,8 +26,12 @@ module.exports = [
     },
   },
   {
-    files: ['eslint.config.js'],
+    files: ['eslint.config.js', 'scripts/**/*.js'],
     languageOptions: { globals: globals.node },
+    rules: { '@typescript-eslint/no-require-imports': 'off' },
+  },
+  {
+    files: ['src/effects.ts'],
     rules: { '@typescript-eslint/no-require-imports': 'off' },
   },
   eslintConfigPrettier,

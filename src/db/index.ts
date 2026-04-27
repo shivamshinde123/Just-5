@@ -31,12 +31,80 @@ export function getDb(): Promise<SQLite.SQLiteDatabase> {
           key TEXT NOT NULL UNIQUE,
           achieved_at INTEGER NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS user_profile (
+          id INTEGER PRIMARY KEY CHECK (id = 1),
+          display_name TEXT NOT NULL DEFAULT 'You',
+          joined_at INTEGER NOT NULL,
+          sound_enabled INTEGER NOT NULL DEFAULT 1,
+          haptics_enabled INTEGER NOT NULL DEFAULT 1
+        );
+        INSERT OR IGNORE INTO user_profile (id, display_name, joined_at, sound_enabled, haptics_enabled)
+          VALUES (1, 'You', strftime('%s','now') * 1000, 1, 1);
       `);
       await migrateStreakState(db);
       return db;
     });
   }
   return dbPromise;
+}
+
+export type UserProfile = {
+  displayName: string;
+  joinedAt: number;
+  soundEnabled: boolean;
+  hapticsEnabled: boolean;
+};
+
+export async function loadUserProfile(): Promise<UserProfile> {
+  const db = await getDb();
+  const row = await db.getFirstAsync<{
+    display_name: string;
+    joined_at: number;
+    sound_enabled: number;
+    haptics_enabled: number;
+  }>(
+    'SELECT display_name, joined_at, sound_enabled, haptics_enabled FROM user_profile WHERE id = 1',
+  );
+  return {
+    displayName: row?.display_name ?? 'You',
+    joinedAt: row?.joined_at ?? Date.now(),
+    soundEnabled: (row?.sound_enabled ?? 1) === 1,
+    hapticsEnabled: (row?.haptics_enabled ?? 1) === 1,
+  };
+}
+
+export async function updateDisplayName(name: string): Promise<void> {
+  const db = await getDb();
+  const trimmed = name.trim().slice(0, 40) || 'You';
+  await db.runAsync('UPDATE user_profile SET display_name = ? WHERE id = 1', trimmed);
+}
+
+export async function setSoundEnabled(enabled: boolean): Promise<void> {
+  const db = await getDb();
+  await db.runAsync('UPDATE user_profile SET sound_enabled = ? WHERE id = 1', enabled ? 1 : 0);
+}
+
+export async function setHapticsEnabled(enabled: boolean): Promise<void> {
+  const db = await getDb();
+  await db.runAsync(
+    'UPDATE user_profile SET haptics_enabled = ? WHERE id = 1',
+    enabled ? 1 : 0,
+  );
+}
+
+export async function resetAllData(): Promise<void> {
+  const db = await getDb();
+  await db.withTransactionAsync(async () => {
+    await db.runAsync('DELETE FROM sessions');
+    await db.runAsync('DELETE FROM milestones');
+    await db.runAsync(
+      `UPDATE streak_state SET
+         current_daily = 0, best_daily = 0, last_started_date = NULL,
+         current_conversion = 0, best_conversion = 0, last_converted_date = NULL,
+         graces_available = 0, graces_earned_at_streak = 0
+       WHERE id = 1`,
+    );
+  });
 }
 
 async function migrateStreakState(db: SQLite.SQLiteDatabase): Promise<void> {
@@ -103,6 +171,7 @@ export type HomeStats = {
   bestConversionStreak: number;
   gracesAvailable: number;
   focusTitle: FocusTitle;
+  last7Days: ContributionDay[];
 };
 
 export type DayKind = 'none' | 'started' | 'converted';
@@ -135,9 +204,23 @@ export type PersonalRecords = {
   mostFocusInDayKey: string | null;
 };
 
+export type MonthCell = {
+  dateKey: string;
+  day: number;
+  kind: DayKind;
+  sessionCount: number;
+  isToday: boolean;
+};
+
+export type MonthGrid = {
+  monthLabel: string;
+  cells: (MonthCell | null)[];
+};
+
 export type StatsBundle = {
   today: TodayStats;
   contribution: ContributionDay[];
+  monthGrid: MonthGrid;
   allTime: AllTimeStats;
   hourCounts: number[];
   lengthBuckets: { label: string; minSec: number; maxSec: number; count: number }[];
@@ -256,6 +339,14 @@ function applyConversionOnSave(
   return { current: 1, lastDate: todayKey };
 }
 
+const WEEKDAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+function startOfLocalDay(timestampMs: number): number {
+  const d = new Date(timestampMs);
+  d.setHours(0, 0, 0, 0);
+  return d.getTime();
+}
+
 function maybeEarnGrace(
   newDailyStreak: number,
   gracesAvailable: number,
@@ -368,13 +459,45 @@ export async function loadHomeStats(): Promise<HomeStats> {
     'SELECT COUNT(*) AS count, SUM(duration_seconds) AS total, SUM(converted) AS converted FROM sessions',
   );
   const state = await readStreakState(db);
-  const todayKey = toLocalDateKey(Date.now());
+  const now = Date.now();
+  const todayKey = toLocalDateKey(now);
 
   const currentDaily = effectiveCurrentDaily(state, todayKey);
   const currentConversion = effectiveCurrentConversion(state, todayKey);
 
   const totalSessions = totals?.count ?? 0;
   const conversionRate = totalSessions > 0 ? (totals?.converted ?? 0) / totalSessions : 0;
+
+  const startToday = startOfLocalDay(now);
+  const endToday = startToday + 24 * 60 * 60 * 1000;
+  const start7Days = startToday - 6 * 24 * 60 * 60 * 1000;
+  const weekRows = await db.getAllAsync<SessionRow>(
+    'SELECT * FROM sessions WHERE started_at >= ? AND started_at < ? ORDER BY started_at ASC',
+    start7Days,
+    endToday,
+  );
+  const byDay = new Map<string, { count: number; converted: boolean }>();
+  for (const r of weekRows) {
+    const key = toLocalDateKey(r.started_at);
+    const prev = byDay.get(key) ?? { count: 0, converted: false };
+    byDay.set(key, {
+      count: prev.count + 1,
+      converted: prev.converted || r.converted === 1,
+    });
+  }
+  const last7Days: ContributionDay[] = [];
+  for (let i = 0; i < 7; i++) {
+    const dayMs = start7Days + i * 24 * 60 * 60 * 1000;
+    const key = toLocalDateKey(dayMs);
+    const entry = byDay.get(key);
+    const kind: DayKind = !entry ? 'none' : entry.converted ? 'converted' : 'started';
+    last7Days.push({
+      dateKey: key,
+      weekday: WEEKDAY_LABELS[new Date(dayMs).getDay()],
+      kind,
+      sessionCount: entry?.count ?? 0,
+    });
+  }
 
   return {
     totalSessions,
@@ -388,15 +511,8 @@ export async function loadHomeStats(): Promise<HomeStats> {
       currentDailyStreak: currentDaily,
       conversionRate,
     }),
+    last7Days,
   };
-}
-
-const WEEKDAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-
-function startOfLocalDay(timestampMs: number): number {
-  const d = new Date(timestampMs);
-  d.setHours(0, 0, 0, 0);
-  return d.getTime();
 }
 
 export async function loadStatsBundle(): Promise<StatsBundle> {
@@ -522,14 +638,85 @@ export async function loadStatsBundle(): Promise<StatsBundle> {
     'SELECT key, achieved_at FROM milestones ORDER BY achieved_at ASC',
   );
 
+  const monthGrid = await loadMonthGrid(db, now);
+
   return {
     today,
     contribution,
+    monthGrid,
     allTime,
     hourCounts,
     lengthBuckets: buckets,
     records,
     focusTitle,
     unlockedMilestones: milestoneRows.map((m) => ({ key: m.key, achievedAt: m.achieved_at })),
+  };
+}
+
+const MONTH_LABELS = [
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
+];
+
+async function loadMonthGrid(
+  db: SQLite.SQLiteDatabase,
+  nowMs: number,
+): Promise<MonthGrid> {
+  const now = new Date(nowMs);
+  const year = now.getFullYear();
+  const month = now.getMonth();
+  const firstOfMonth = new Date(year, month, 1);
+  const firstWeekday = firstOfMonth.getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const startMs = firstOfMonth.getTime();
+  const endMs = new Date(year, month + 1, 1).getTime();
+  const todayKey = toLocalDateKey(nowMs);
+
+  const monthRows = await db.getAllAsync<SessionRow>(
+    'SELECT * FROM sessions WHERE started_at >= ? AND started_at < ? ORDER BY started_at ASC',
+    startMs,
+    endMs,
+  );
+  const byDay = new Map<string, { count: number; converted: boolean }>();
+  for (const r of monthRows) {
+    const key = toLocalDateKey(r.started_at);
+    const prev = byDay.get(key) ?? { count: 0, converted: false };
+    byDay.set(key, {
+      count: prev.count + 1,
+      converted: prev.converted || r.converted === 1,
+    });
+  }
+
+  const totalCells = 42;
+  const cells: (MonthCell | null)[] = new Array(totalCells).fill(null);
+  for (let day = 1; day <= daysInMonth; day++) {
+    const idx = firstWeekday + (day - 1);
+    if (idx >= totalCells) break;
+    const dayDate = new Date(year, month, day);
+    const key = toLocalDateKey(dayDate.getTime());
+    const entry = byDay.get(key);
+    const kind: DayKind = !entry ? 'none' : entry.converted ? 'converted' : 'started';
+    cells[idx] = {
+      dateKey: key,
+      day,
+      kind,
+      sessionCount: entry?.count ?? 0,
+      isToday: key === todayKey,
+    };
+  }
+
+  return {
+    monthLabel: `${MONTH_LABELS[month]} ${year}`,
+    cells,
   };
 }

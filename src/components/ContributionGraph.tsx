@@ -1,11 +1,11 @@
 import { StyleSheet, Text, View } from 'react-native';
 import type { ContributionDay } from '../db';
-import { colors, radii, spacing } from '../theme';
+import { colors, fonts, radii, spacing } from '../theme';
 
 const CELL_COLORS: Record<ContributionDay['kind'], string> = {
-  none: colors.border,
-  started: '#3D5BCB',
-  converted: colors.success,
+  none: colors.cellEmpty,
+  started: colors.cellMid,
+  converted: colors.cellHigh,
 };
 
 export function ContributionGraph({ days }: { days: ContributionDay[] }) {
@@ -27,8 +27,12 @@ export function ContributionGraph({ days }: { days: ContributionDay[] }) {
 }
 
 const styles = StyleSheet.create({
-  row: { flexDirection: 'row', justifyContent: 'space-between' },
+  row: { flexDirection: 'row', justifyContent: 'space-between', gap: spacing.xs },
   col: { alignItems: 'center', gap: spacing.xs, flex: 1 },
-  cell: { width: '85%', aspectRatio: 1, borderRadius: radii.sm },
-  label: { color: colors.textMuted, fontSize: 11 },
+  cell: { width: '100%', aspectRatio: 1, borderRadius: radii.sm },
+  label: {
+    fontFamily: fonts.regular,
+    fontSize: 10,
+    color: colors.textMuted,
+  },
 });

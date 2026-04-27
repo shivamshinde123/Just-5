@@ -1,19 +1,25 @@
 import { useFocusEffect } from '@react-navigation/native';
-import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import type { CompositeScreenProps } from '@react-navigation/native';
+import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
+import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useCallback, useState, type ReactNode } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ContributionGraph } from '../components/ContributionGraph';
 import { HourBars } from '../components/HourBars';
 import { LengthHistogram } from '../components/LengthHistogram';
+import { MonthGrid } from '../components/MonthGrid';
 import { loadStatsBundle, type StatsBundle } from '../db';
 import { MILESTONE_LABELS, type MilestoneKey } from '../gamification';
-import { RootStackParamList } from '../navigation/types';
-import { colors, radii, spacing } from '../theme';
+import { MainTabParamList, RootStackParamList } from '../navigation/types';
+import { colors, fonts, radii, shadows, spacing, text } from '../theme';
 import { formatFocusTime } from '../utils/time';
 
-type Props = NativeStackScreenProps<RootStackParamList, 'Stats'>;
-type Tab = 'today' | 'week' | 'all';
+type Props = CompositeScreenProps<
+  BottomTabScreenProps<MainTabParamList, 'Stats'>,
+  NativeStackScreenProps<RootStackParamList>
+>;
+type Tab = 'today' | 'consistency' | 'all';
 
 export default function StatsScreen({ navigation }: Props) {
   const [tab, setTab] = useState<Tab>('today');
@@ -34,23 +40,31 @@ export default function StatsScreen({ navigation }: Props) {
   const empty = data && data.allTime.totalSessions === 0;
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
-      <View style={styles.header}>
+    <SafeAreaView style={styles.safe} edges={['top']}>
+      <View style={styles.topBar}>
+        <View style={styles.topBarLeft}>
+          <View style={styles.avatar}>
+            <View style={styles.avatarDot} />
+          </View>
+          <Text style={styles.topBarTitle}>Insights</Text>
+        </View>
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Go back"
-          onPress={() => navigation.goBack()}
+          accessibilityLabel="Open settings"
+          onPress={() => navigation.navigate('Settings')}
           hitSlop={12}
+          style={styles.topBarIcon}
         >
-          <Text style={styles.back}>‹ Back</Text>
+          <View style={styles.dot} />
+          <View style={styles.dot} />
+          <View style={styles.dot} />
         </Pressable>
-        <Text style={styles.title}>Stats</Text>
-        <View style={{ width: 50 }} />
       </View>
 
       <View style={styles.tabs} accessibilityRole="tablist">
-        {(['today', 'week', 'all'] as Tab[]).map((t) => {
-          const label = t === 'today' ? 'Today' : t === 'week' ? 'This Week' : 'All Time';
+        {(['today', 'consistency', 'all'] as Tab[]).map((t) => {
+          const label =
+            t === 'today' ? 'Today' : t === 'consistency' ? 'Consistency' : 'All Time';
           const selected = tab === t;
           return (
             <Pressable
@@ -62,25 +76,24 @@ export default function StatsScreen({ navigation }: Props) {
               accessibilityState={{ selected }}
             >
               <Text style={[styles.tabText, selected && styles.tabActive]}>{label}</Text>
+              {selected && <View style={styles.tabIndicator} />}
             </Pressable>
           );
         })}
       </View>
 
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         {!data ? (
-          <Text style={styles.emptyText}>Loading…</Text>
+          <Text style={styles.bodyMuted}>Loading…</Text>
         ) : empty ? (
           <View style={styles.emptyWrap}>
             <Text style={styles.emptyTitle}>No sessions yet</Text>
-            <Text style={styles.emptyText}>
-              Start a session to begin tracking your focus.
-            </Text>
+            <Text style={styles.bodyMuted}>Start a session to begin tracking your focus.</Text>
           </View>
         ) : tab === 'today' ? (
           <TodayView data={data} />
-        ) : tab === 'week' ? (
-          <WeekView data={data} />
+        ) : tab === 'consistency' ? (
+          <ConsistencyView data={data} />
         ) : (
           <AllTimeView data={data} />
         )}
@@ -89,10 +102,28 @@ export default function StatsScreen({ navigation }: Props) {
   );
 }
 
-function Card({ title, children }: { title: string; children: ReactNode }) {
+function Card({
+  title,
+  children,
+  variant = 'cream',
+}: {
+  title?: string;
+  children: ReactNode;
+  variant?: 'cream' | 'white' | 'moss';
+}) {
+  const cardStyle =
+    variant === 'moss'
+      ? styles.cardMoss
+      : variant === 'white'
+        ? styles.cardWhite
+        : styles.cardCream;
   return (
-    <View style={styles.card}>
-      <Text style={styles.cardTitle}>{title}</Text>
+    <View style={[styles.card, cardStyle]}>
+      {title && (
+        <Text style={[styles.cardTitle, variant === 'moss' && styles.cardTitleOnMoss]}>
+          {title}
+        </Text>
+      )}
       {children}
     </View>
   );
@@ -117,28 +148,54 @@ function formatHourLabel(ts: number): string {
 }
 
 function TodayView({ data }: { data: StatsBundle }) {
-  const { today } = data;
+  const { today, allTime } = data;
   return (
-    <Card title="Today">
-      <StatRow label="Started" value={today.startedToday ? 'Yes' : 'Not yet'} />
-      <StatRow label="Focus time" value={formatFocusTime(today.totalFocusSeconds)} />
-      <StatRow
-        label="First session"
-        value={today.firstStartTimestamp ? formatHourLabel(today.firstStartTimestamp) : '—'}
-      />
-    </Card>
+    <>
+      <View style={styles.heroBlock}>
+        <Text style={styles.heroEyebrow}>CURRENT MOMENTUM</Text>
+        <View style={styles.heroValueRow}>
+          <Text style={styles.heroValue}>{formatFocusTime(today.totalFocusSeconds)}</Text>
+          <Text style={styles.heroSuffix}>today</Text>
+        </View>
+        <Text style={styles.heroBody}>
+          {today.firstStartTimestamp
+            ? `Your first session began at ${formatHourLabel(today.firstStartTimestamp)}.`
+            : 'Tap Start to begin your first session today.'}
+        </Text>
+      </View>
+
+      <View style={[styles.heroPill, today.startedToday && styles.heroPillActive]}>
+        <View style={styles.heroPillDot} />
+        <Text style={styles.heroPillText}>
+          {today.startedToday ? 'Focus Mode Active' : 'Idle'}
+        </Text>
+      </View>
+
+      <Card title="Today">
+        <StatRow label="Started" value={today.startedToday ? 'Yes' : 'Not yet'} />
+        <StatRow label="Focus time" value={formatFocusTime(today.totalFocusSeconds)} />
+        <StatRow
+          label="First session"
+          value={today.firstStartTimestamp ? formatHourLabel(today.firstStartTimestamp) : '—'}
+        />
+        <StatRow label="All-time conversion" value={`${Math.round(allTime.conversionRate * 100)}%`} />
+      </Card>
+    </>
   );
 }
 
-function WeekView({ data }: { data: StatsBundle }) {
+function ConsistencyView({ data }: { data: StatsBundle }) {
   return (
     <>
       <Card title="Last 7 days">
         <ContributionGraph days={data.contribution} />
+      </Card>
+      <Card title={data.monthGrid.monthLabel}>
+        <MonthGrid data={data.monthGrid} />
         <View style={styles.legend}>
-          <LegendDot color={colors.border} label="None" />
-          <LegendDot color="#3D5BCB" label="Started" />
-          <LegendDot color={colors.success} label="Converted" />
+          <LegendDot color={colors.cellEmpty} label="None" />
+          <LegendDot color={colors.cellMid} label="Started" />
+          <LegendDot color={colors.cellHigh} label="Converted" />
         </View>
       </Card>
     </>
@@ -163,30 +220,54 @@ function formatDateMs(ms: number): string {
   });
 }
 
+function peakHourLabel(counts: number[]): string {
+  if (counts.every((c) => c === 0)) return '—';
+  let peakStart = 0;
+  let peakSum = 0;
+  for (let i = 0; i < counts.length; i++) {
+    const sum = counts[i] + counts[(i + 1) % 24];
+    if (sum > peakSum) {
+      peakSum = sum;
+      peakStart = i;
+    }
+  }
+  const fmt = (h: number) => {
+    const ampm = h < 12 ? 'AM' : 'PM';
+    const h12 = h % 12 === 0 ? 12 : h % 12;
+    return `${h12} ${ampm}`;
+  };
+  return `${fmt(peakStart)} – ${fmt((peakStart + 2) % 24)}`;
+}
+
 function AllTimeView({ data }: { data: StatsBundle }) {
   const { allTime, hourCounts, lengthBuckets, records, focusTitle, unlockedMilestones } = data;
   const conversionPct = Math.round(allTime.conversionRate * 100);
   const allMilestoneKeys = Object.keys(MILESTONE_LABELS) as MilestoneKey[];
   const achievedMap = new Map(unlockedMilestones.map((m) => [m.key, m.achievedAt]));
+
   return (
     <>
-      <Card title="All time">
-        <StatRow label="Sessions" value={String(allTime.totalSessions)} />
-        <StatRow label="Total focus" value={formatFocusTime(allTime.totalFocusSeconds)} />
-        <StatRow label="Avg session" value={formatFocusTime(allTime.averageSessionSeconds)} />
-        <StatRow label="Conversion rate" value={`${conversionPct}%`} />
-        <StatRow label="Title" value={focusTitle} />
+      <View style={styles.summaryGrid}>
+        <SummaryTile label="Total Sessions" value={String(allTime.totalSessions)} />
+        <SummaryTile label="Focus Time" value={formatFocusTime(allTime.totalFocusSeconds)} />
+        <SummaryTile label="Avg. Session" value={formatFocusTime(allTime.averageSessionSeconds)} />
+        <SummaryTile label="Conversion" value={`${conversionPct}%`} />
+      </View>
+
+      <Card variant="moss">
+        <Text style={styles.mossEyebrow}>PEAK FOCUS</Text>
+        <Text style={styles.mossValue}>{peakHourLabel(hourCounts)}</Text>
+        <Text style={styles.mossBody}>
+          {focusTitle === 'Flow State'
+            ? 'You’re in flow. Your peak hours are paying off.'
+            : 'Your neural clarity is highest in these hours.'}
+        </Text>
       </Card>
+
       <Card title="Personal records">
-        <StatRow
-          label="Longest session"
-          value={formatFocusTime(records.longestSessionSeconds)}
-        />
+        <StatRow label="Longest session" value={formatFocusTime(records.longestSessionSeconds)} />
         <StatRow label="Longest daily streak" value={`${records.longestDailyStreak} days`} />
-        <StatRow
-          label="Longest conversion"
-          value={`${records.longestConversionStreak} days`}
-        />
+        <StatRow label="Longest conversion" value={`${records.longestConversionStreak} days`} />
         <StatRow
           label="Most focus in a day"
           value={
@@ -196,6 +277,16 @@ function AllTimeView({ data }: { data: StatsBundle }) {
           }
         />
       </Card>
+
+      <Card title="Focus Distribution" variant="white">
+        <Text style={styles.cardSubtitle}>Sessions across the 24-hour cycle.</Text>
+        <HourBars counts={hourCounts} />
+      </Card>
+
+      <Card title="Session Duration">
+        <LengthHistogram buckets={lengthBuckets} />
+      </Card>
+
       <Card title="Milestones">
         {allMilestoneKeys.map((k) => {
           const achievedAt = achievedMap.get(k);
@@ -210,13 +301,20 @@ function AllTimeView({ data }: { data: StatsBundle }) {
           );
         })}
       </Card>
-      <Card title="Best time of day">
-        <HourBars counts={hourCounts} />
-      </Card>
-      <Card title="Session length">
-        <LengthHistogram buckets={lengthBuckets} />
+
+      <Card title="Title">
+        <Text style={styles.titleValue}>{focusTitle}</Text>
       </Card>
     </>
+  );
+}
+
+function SummaryTile({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={styles.summaryTile}>
+      <Text style={styles.summaryLabel}>{label}</Text>
+      <Text style={styles.summaryValue}>{value}</Text>
+    </View>
   );
 }
 
@@ -231,63 +329,188 @@ function LegendDot({ color, label }: { color: string; label: string }) {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
-  header: {
+  topBar: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
   },
-  back: { color: colors.primary, fontSize: 16, width: 50 },
-  title: { color: colors.text, fontSize: 20, fontWeight: '600' },
+  topBarLeft: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  avatar: {
+    width: 36,
+    height: 36,
+    borderRadius: radii.pill,
+    backgroundColor: colors.mint,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarDot: { width: 12, height: 12, borderRadius: radii.pill, backgroundColor: colors.primary },
+  topBarTitle: { ...text.h3, color: colors.primaryDeep, letterSpacing: -0.4 },
+  topBarIcon: {
+    width: 36,
+    height: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 3,
+  },
+  dot: { width: 4, height: 4, borderRadius: 2, backgroundColor: colors.primaryDeep },
+
   tabs: {
     flexDirection: 'row',
     paddingHorizontal: spacing.lg,
-    gap: spacing.sm,
-    marginBottom: spacing.sm,
-  },
-  tab: {
-    flex: 1,
-    paddingVertical: spacing.sm,
-    alignItems: 'center',
-    borderBottomWidth: 2,
-    borderBottomColor: 'transparent',
-  },
-  tabText: { color: colors.textMuted, fontSize: 14, letterSpacing: 0.5 },
-  tabActive: { color: colors.text, fontWeight: '600' },
-  content: { padding: spacing.lg, gap: spacing.md, paddingBottom: spacing.xl },
-  card: {
-    backgroundColor: colors.surface,
-    borderRadius: radii.md,
-    padding: spacing.md,
-    gap: spacing.sm,
-  },
-  cardTitle: {
-    color: colors.textMuted,
-    fontSize: 11,
-    textTransform: 'uppercase',
-    letterSpacing: 1,
+    gap: spacing.lg,
     marginBottom: spacing.xs,
   },
+  tab: {
+    paddingVertical: spacing.sm,
+    alignItems: 'flex-start',
+  },
+  tabText: {
+    fontFamily: fonts.semibold,
+    fontSize: 16,
+    color: colors.navInactive,
+  },
+  tabActive: { color: colors.primaryDeep },
+  tabIndicator: {
+    height: 2,
+    backgroundColor: colors.primary,
+    alignSelf: 'stretch',
+    marginTop: 6,
+    borderRadius: 1,
+  },
+
+  content: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
+    paddingBottom: 120,
+    gap: spacing.md,
+  },
+
+  heroBlock: { gap: spacing.xs, marginTop: spacing.sm },
+  heroEyebrow: { ...text.eyebrow, color: colors.primary },
+  heroValueRow: { flexDirection: 'row', alignItems: 'baseline', gap: spacing.sm },
+  heroValue: {
+    fontFamily: fonts.bold,
+    fontSize: 44,
+    letterSpacing: -1,
+    color: colors.text,
+  },
+  heroSuffix: { ...text.h3, color: colors.textMuted, fontFamily: fonts.regular },
+  heroBody: { ...text.body, color: colors.textBody },
+
+  heroPill: {
+    flexDirection: 'row',
+    alignSelf: 'flex-start',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 10,
+    backgroundColor: colors.primary,
+    borderRadius: radii.md,
+    ...shadows.ctaSoft,
+    marginBottom: spacing.sm,
+  },
+  heroPillActive: { backgroundColor: colors.primary },
+  heroPillDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.mint },
+  heroPillText: { ...text.body, color: colors.textOnDark },
+
+  card: {
+    borderRadius: radii.xl,
+    padding: spacing.lg,
+    gap: spacing.sm,
+  },
+  cardCream: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.cardBorderTan,
+  },
+  cardWhite: {
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: 'rgba(193, 201, 187, 0.15)',
+    ...shadows.card,
+  },
+  cardMoss: {
+    backgroundColor: colors.primaryMoss,
+    padding: spacing.lg,
+  },
+  cardTitle: { ...text.h2, color: colors.text },
+  cardTitleOnMoss: { color: colors.textOnDark },
+  cardSubtitle: { ...text.body, color: colors.textBody, opacity: 0.85 },
+
+  mossEyebrow: {
+    fontFamily: fonts.regular,
+    fontSize: 14,
+    letterSpacing: 0.7,
+    color: 'rgba(255, 255, 255, 0.85)',
+  },
+  mossValue: {
+    fontFamily: fonts.bold,
+    fontSize: 32,
+    letterSpacing: -0.6,
+    color: colors.textOnDark,
+    marginVertical: spacing.xs,
+  },
+  mossBody: {
+    fontFamily: fonts.regular,
+    fontSize: 14,
+    lineHeight: 20,
+    color: colors.textOnDark,
+    opacity: 0.92,
+  },
+
   statRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingVertical: spacing.xs,
+    paddingVertical: 6,
   },
-  statLabel: { color: colors.textMuted, fontSize: 14 },
-  statValue: { color: colors.text, fontSize: 16, fontWeight: '500' },
+  statLabel: { ...text.body, color: colors.textBody },
+  statValue: { ...text.body, color: colors.text, fontFamily: fonts.semibold },
+
+  summaryGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.md,
+    marginBottom: spacing.xs,
+  },
+  summaryTile: {
+    flexBasis: '47%',
+    flexGrow: 1,
+    backgroundColor: colors.surfaceTile,
+    borderRadius: radii.xl,
+    padding: spacing.lg,
+    gap: spacing.xs,
+    minHeight: 96,
+  },
+  summaryLabel: { ...text.body, color: colors.textMuted },
+  summaryValue: {
+    fontFamily: fonts.bold,
+    fontSize: 24,
+    letterSpacing: -0.4,
+    color: colors.text,
+  },
+
+  titleValue: {
+    fontFamily: fonts.semibold,
+    fontSize: 20,
+    color: colors.primary,
+  },
+
   legend: { flexDirection: 'row', gap: spacing.md, marginTop: spacing.sm },
   legendItem: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
   legendDot: { width: 10, height: 10, borderRadius: 2 },
-  legendLabel: { color: colors.textMuted, fontSize: 11 },
-  emptyWrap: { alignItems: 'center', paddingVertical: spacing.xl, gap: spacing.sm },
-  emptyTitle: { color: colors.text, fontSize: 18, fontWeight: '600' },
-  emptyText: { color: colors.textMuted, fontSize: 14, textAlign: 'center' },
+  legendLabel: { fontFamily: fonts.regular, fontSize: 12, color: colors.textMuted },
+
+  emptyWrap: { alignItems: 'center', paddingVertical: spacing.xxl, gap: spacing.sm },
+  emptyTitle: { ...text.h2, color: colors.text },
+  bodyMuted: { ...text.body, color: colors.textMuted, textAlign: 'center' },
+
   milestoneRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
-    paddingVertical: spacing.xs,
+    paddingVertical: 6,
   },
   milestoneDot: {
     width: 10,
@@ -295,8 +518,8 @@ const styles = StyleSheet.create({
     borderRadius: 5,
     backgroundColor: colors.border,
   },
-  milestoneDotOn: { backgroundColor: colors.success },
-  milestoneLabel: { color: colors.text, fontSize: 14, flex: 1 },
+  milestoneDotOn: { backgroundColor: colors.primary },
+  milestoneLabel: { ...text.body, color: colors.text, flex: 1 },
   milestoneLabelLocked: { color: colors.textMuted },
-  milestoneDate: { color: colors.textMuted, fontSize: 11 },
+  milestoneDate: { fontFamily: fonts.regular, fontSize: 12, color: colors.textMuted },
 });
