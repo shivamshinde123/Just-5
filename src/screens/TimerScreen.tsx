@@ -118,7 +118,7 @@ export default function TimerScreen({ navigation, route }: Props) {
       <View style={styles.actions}>
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Cancel session"
+          accessibilityLabel="End session"
           onPress={promptCancel}
           style={({ pressed }) => [styles.endButton, pressed && styles.endButtonPressed]}
         >

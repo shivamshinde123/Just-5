@@ -17,7 +17,7 @@ export function LengthHistogram({ buckets }: { buckets: Bucket[] }) {
           const isTallest = i === tallestIdx && b.count > 0;
           return (
             <View key={b.label} style={styles.col}>
-              {isTallest && <Text style={styles.avgTag}>Avg</Text>}
+              {isTallest && <Text style={styles.avgTag}>Most</Text>}
               <View
                 style={[
                   styles.bar,

@@ -10,8 +10,12 @@ export function invalidateEffectsCache(): void {
 
 async function getPrefs(): Promise<{ sound: boolean; haptics: boolean }> {
   if (cachedPrefs) return cachedPrefs;
-  const p = await loadUserProfile();
-  cachedPrefs = { sound: p.soundEnabled, haptics: p.hapticsEnabled };
+  try {
+    const p = await loadUserProfile();
+    cachedPrefs = { sound: p.soundEnabled, haptics: p.hapticsEnabled };
+  } catch {
+    cachedPrefs = { sound: true, haptics: true };
+  }
   return cachedPrefs;
 }
 

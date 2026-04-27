@@ -18,7 +18,6 @@ type Props = CompositeScreenProps<
 >;
 
 const TOAST_DURATION_MS = 4000;
-const WEEKDAY_LETTERS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 
 export default function HomeScreen({ navigation, route }: Props) {
   const [stats, setStats] = useState<HomeStats | null>(null);
@@ -178,6 +177,7 @@ function StreakIndicator({
         {(last7Days ?? new Array(7).fill(null)).map((day: ContributionDay | null, i) => {
           const filled = day && day.kind !== 'none';
           const isToday = i === todayIdx;
+          const letter = day ? day.weekday.charAt(0) : '';
           return (
             <View
               key={i}
@@ -194,7 +194,7 @@ function StreakIndicator({
                   isToday && !filled && styles.weekCircleLetterToday,
                 ]}
               >
-                {WEEKDAY_LETTERS[i]}
+                {letter}
               </Text>
             </View>
           );

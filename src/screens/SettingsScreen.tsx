@@ -40,11 +40,14 @@ export default function SettingsScreen({ navigation }: Props) {
   const onSaveName = async () => {
     if (!profile) return;
     setSavingName(true);
-    await updateDisplayName(nameDraft);
-    const fresh = await loadUserProfile();
-    setProfile(fresh);
-    setNameDraft(fresh.displayName);
-    setSavingName(false);
+    try {
+      await updateDisplayName(nameDraft);
+      const fresh = await loadUserProfile();
+      setProfile(fresh);
+      setNameDraft(fresh.displayName);
+    } finally {
+      setSavingName(false);
+    }
   };
 
   const onToggleSound = async (value: boolean) => {
