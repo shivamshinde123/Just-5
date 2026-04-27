@@ -1,5 +1,7 @@
+import type { MilestoneKey } from '../gamification';
+
 export type RootStackParamList = {
-  Home: undefined;
+  Home: { unlockedMilestones?: MilestoneKey[] } | undefined;
   Timer: { startedAt: number };
   SessionEnd: { startedAt: number; reachedFiveAt: number };
   Stats: undefined;

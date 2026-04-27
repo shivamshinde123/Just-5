@@ -7,6 +7,7 @@ import { ContributionGraph } from '../components/ContributionGraph';
 import { HourBars } from '../components/HourBars';
 import { LengthHistogram } from '../components/LengthHistogram';
 import { loadStatsBundle, type StatsBundle } from '../db';
+import { MILESTONE_LABELS, type MilestoneKey } from '../gamification';
 import { RootStackParamList } from '../navigation/types';
 import { colors, radii, spacing } from '../theme';
 import { formatFocusTime } from '../utils/time';
@@ -144,9 +145,29 @@ function WeekView({ data }: { data: StatsBundle }) {
   );
 }
 
+function formatDateKey(key: string | null): string {
+  if (!key) return '—';
+  const [y, m, d] = key.split('-').map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+}
+
+function formatDateMs(ms: number): string {
+  return new Date(ms).toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+}
+
 function AllTimeView({ data }: { data: StatsBundle }) {
-  const { allTime, hourCounts, lengthBuckets } = data;
+  const { allTime, hourCounts, lengthBuckets, records, focusTitle, unlockedMilestones } = data;
   const conversionPct = Math.round(allTime.conversionRate * 100);
+  const allMilestoneKeys = Object.keys(MILESTONE_LABELS) as MilestoneKey[];
+  const achievedMap = new Map(unlockedMilestones.map((m) => [m.key, m.achievedAt]));
   return (
     <>
       <Card title="All time">
@@ -154,6 +175,40 @@ function AllTimeView({ data }: { data: StatsBundle }) {
         <StatRow label="Total focus" value={formatFocusTime(allTime.totalFocusSeconds)} />
         <StatRow label="Avg session" value={formatFocusTime(allTime.averageSessionSeconds)} />
         <StatRow label="Conversion rate" value={`${conversionPct}%`} />
+        <StatRow label="Title" value={focusTitle} />
+      </Card>
+      <Card title="Personal records">
+        <StatRow
+          label="Longest session"
+          value={formatFocusTime(records.longestSessionSeconds)}
+        />
+        <StatRow label="Longest daily streak" value={`${records.longestDailyStreak} days`} />
+        <StatRow
+          label="Longest conversion"
+          value={`${records.longestConversionStreak} days`}
+        />
+        <StatRow
+          label="Most focus in a day"
+          value={
+            records.mostFocusInDaySeconds > 0
+              ? `${formatFocusTime(records.mostFocusInDaySeconds)} (${formatDateKey(records.mostFocusInDayKey)})`
+              : '—'
+          }
+        />
+      </Card>
+      <Card title="Milestones">
+        {allMilestoneKeys.map((k) => {
+          const achievedAt = achievedMap.get(k);
+          return (
+            <View key={k} style={styles.milestoneRow}>
+              <View style={[styles.milestoneDot, achievedAt ? styles.milestoneDotOn : null]} />
+              <Text style={[styles.milestoneLabel, !achievedAt && styles.milestoneLabelLocked]}>
+                {MILESTONE_LABELS[k]}
+              </Text>
+              {achievedAt && <Text style={styles.milestoneDate}>{formatDateMs(achievedAt)}</Text>}
+            </View>
+          );
+        })}
       </Card>
       <Card title="Best time of day">
         <HourBars counts={hourCounts} />
@@ -228,4 +283,20 @@ const styles = StyleSheet.create({
   emptyWrap: { alignItems: 'center', paddingVertical: spacing.xl, gap: spacing.sm },
   emptyTitle: { color: colors.text, fontSize: 18, fontWeight: '600' },
   emptyText: { color: colors.textMuted, fontSize: 14, textAlign: 'center' },
+  milestoneRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingVertical: spacing.xs,
+  },
+  milestoneDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: colors.border,
+  },
+  milestoneDotOn: { backgroundColor: colors.success },
+  milestoneLabel: { color: colors.text, fontSize: 14, flex: 1 },
+  milestoneLabelLocked: { color: colors.textMuted },
+  milestoneDate: { color: colors.textMuted, fontSize: 11 },
 });
