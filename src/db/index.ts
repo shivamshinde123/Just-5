@@ -98,6 +98,36 @@ export type HomeStats = {
   gracesAvailable: number;
 };
 
+export type DayKind = 'none' | 'started' | 'converted';
+
+export type ContributionDay = {
+  dateKey: string;
+  weekday: string;
+  kind: DayKind;
+  sessionCount: number;
+};
+
+export type TodayStats = {
+  startedToday: boolean;
+  totalFocusSeconds: number;
+  firstStartTimestamp: number | null;
+};
+
+export type AllTimeStats = {
+  totalSessions: number;
+  totalFocusSeconds: number;
+  averageSessionSeconds: number;
+  conversionRate: number;
+};
+
+export type StatsBundle = {
+  today: TodayStats;
+  contribution: ContributionDay[];
+  allTime: AllTimeStats;
+  hourCounts: number[];
+  lengthBuckets: { label: string; minSec: number; maxSec: number; count: number }[];
+};
+
 function toLocalDateKey(timestampMs: number): string {
   const d = new Date(timestampMs);
   const y = d.getFullYear();
@@ -286,5 +316,113 @@ export async function loadHomeStats(): Promise<HomeStats> {
     currentConversionStreak: currentConversion,
     bestConversionStreak: state.best_conversion,
     gracesAvailable: state.graces_available,
+  };
+}
+
+const WEEKDAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+function startOfLocalDay(timestampMs: number): number {
+  const d = new Date(timestampMs);
+  d.setHours(0, 0, 0, 0);
+  return d.getTime();
+}
+
+export async function loadStatsBundle(): Promise<StatsBundle> {
+  const db = await getDb();
+  const now = Date.now();
+  const startToday = startOfLocalDay(now);
+  const endToday = startToday + 24 * 60 * 60 * 1000;
+  const start7Days = startToday - 6 * 24 * 60 * 60 * 1000;
+
+  const todayRows = await db.getAllAsync<SessionRow>(
+    'SELECT * FROM sessions WHERE started_at >= ? AND started_at < ? ORDER BY started_at ASC',
+    startToday,
+    endToday,
+  );
+  const today: TodayStats = {
+    startedToday: todayRows.length > 0,
+    totalFocusSeconds: todayRows.reduce((acc, r) => acc + r.duration_seconds, 0),
+    firstStartTimestamp: todayRows[0]?.started_at ?? null,
+  };
+
+  const weekRows = await db.getAllAsync<SessionRow>(
+    'SELECT * FROM sessions WHERE started_at >= ? AND started_at < ? ORDER BY started_at ASC',
+    start7Days,
+    endToday,
+  );
+  const byDay = new Map<string, { count: number; converted: boolean }>();
+  for (const r of weekRows) {
+    const key = toLocalDateKey(r.started_at);
+    const prev = byDay.get(key) ?? { count: 0, converted: false };
+    byDay.set(key, {
+      count: prev.count + 1,
+      converted: prev.converted || r.converted === 1,
+    });
+  }
+  const contribution: ContributionDay[] = [];
+  for (let i = 0; i < 7; i++) {
+    const dayMs = start7Days + i * 24 * 60 * 60 * 1000;
+    const key = toLocalDateKey(dayMs);
+    const entry = byDay.get(key);
+    const kind: DayKind = !entry ? 'none' : entry.converted ? 'converted' : 'started';
+    contribution.push({
+      dateKey: key,
+      weekday: WEEKDAY_LABELS[new Date(dayMs).getDay()],
+      kind,
+      sessionCount: entry?.count ?? 0,
+    });
+  }
+
+  const allTotals = await db.getFirstAsync<{
+    count: number;
+    total: number | null;
+    converted: number;
+  }>(
+    `SELECT COUNT(*) AS count,
+            SUM(duration_seconds) AS total,
+            SUM(converted) AS converted
+     FROM sessions`,
+  );
+  const totalSessions = allTotals?.count ?? 0;
+  const totalFocusSeconds = allTotals?.total ?? 0;
+  const allTime: AllTimeStats = {
+    totalSessions,
+    totalFocusSeconds,
+    averageSessionSeconds: totalSessions > 0 ? Math.round(totalFocusSeconds / totalSessions) : 0,
+    conversionRate: totalSessions > 0 ? (allTotals?.converted ?? 0) / totalSessions : 0,
+  };
+
+  const allRows = await db.getAllAsync<{ started_at: number; duration_seconds: number }>(
+    'SELECT started_at, duration_seconds FROM sessions',
+  );
+  const hourCounts = new Array(24).fill(0) as number[];
+  for (const r of allRows) {
+    const h = new Date(r.started_at).getHours();
+    hourCounts[h] += 1;
+  }
+
+  const buckets = [
+    { label: '<5m', minSec: 0, maxSec: 5 * 60, count: 0 },
+    { label: '5–15m', minSec: 5 * 60, maxSec: 15 * 60, count: 0 },
+    { label: '15–30m', minSec: 15 * 60, maxSec: 30 * 60, count: 0 },
+    { label: '30–45m', minSec: 30 * 60, maxSec: 45 * 60, count: 0 },
+    { label: '45m+', minSec: 45 * 60, maxSec: Infinity, count: 0 },
+  ];
+  for (const r of allRows) {
+    const s = r.duration_seconds;
+    for (const b of buckets) {
+      if (s >= b.minSec && s < b.maxSec) {
+        b.count += 1;
+        break;
+      }
+    }
+  }
+
+  return {
+    today,
+    contribution,
+    allTime,
+    hourCounts,
+    lengthBuckets: buckets,
   };
 }

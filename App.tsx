@@ -4,6 +4,7 @@ import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import HomeScreen from './src/screens/HomeScreen';
 import SessionEndScreen from './src/screens/SessionEndScreen';
+import StatsScreen from './src/screens/StatsScreen';
 import TimerScreen from './src/screens/TimerScreen';
 import { RootStackParamList } from './src/navigation/types';
 import { colors } from './src/theme';
@@ -44,6 +45,7 @@ export default function App() {
             component={SessionEndScreen}
             options={{ gestureEnabled: false }}
           />
+          <Stack.Screen name="Stats" component={StatsScreen} />
         </Stack.Navigator>
         <StatusBar style="light" />
       </NavigationContainer>
