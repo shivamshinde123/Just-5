@@ -10,7 +10,7 @@ import {
   useFonts,
 } from '@expo-google-fonts/manrope';
 import { StatusBar } from 'expo-status-bar';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import HomeScreen from './src/screens/HomeScreen';
 import ProfileScreen from './src/screens/ProfileScreen';
@@ -137,11 +137,7 @@ export default function App() {
   });
 
   if (!loaded) {
-    return (
-      <View style={styles.loading}>
-        <Text style={styles.loadingText}>Just 5</Text>
-      </View>
-    );
+    return <View style={styles.loading} />;
   }
 
   return (
@@ -178,8 +174,7 @@ export default function App() {
 }
 
 const styles = StyleSheet.create({
-  loading: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.bg },
-  loadingText: { color: colors.primary, fontSize: 18, letterSpacing: 4 },
+  loading: { flex: 1, backgroundColor: colors.bg },
 });
 
 const tabIconStyles = StyleSheet.create({
