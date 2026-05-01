@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(python -c \"import graphify; print\\('installed'\\)\" 2>&1)",
+      "PowerShell(py --version 2>&1)",
+      "PowerShell(python3 --version 2>&1)",
+      "PowerShell(Get-Command python, py, python3 -ErrorAction SilentlyContinue)",
+      "PowerShell(python --version 2>&1)",
+      "PowerShell(python .graphify_build.py)",
+      "PowerShell(python .graphify_label.py)"
+    ]
+  }
+}
