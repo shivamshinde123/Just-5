@@ -2,11 +2,17 @@
 
 
 
-graphify-out/cache/
+
 .claude\settings.local.json
 .claude\scheduled_tasks.lock
+
 # dependencies
 node_modules/
+
+# Graphify 
+graphify-out/cache/
+graphify-out/graph.json
+graphify-out/manifest.json
 
 # Expo
 .expo/
